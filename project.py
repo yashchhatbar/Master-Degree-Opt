@@ -5,10 +5,28 @@ from sklearn.preprocessing import LabelEncoder
 from sklearn.model_selection import train_test_split
 import pandas as pd
 import matplotlib.pyplot as plt
+import os
 
-# Load and prepare data
-model_df = pd.read_csv("dataset.csv")
+# -----------------------------
+# PAGE CONFIG
+# -----------------------------
+st.set_page_config(page_title="Masters Decision Support System", layout="centered")
 
+# -----------------------------
+# LOAD DATA (SAFE PATH)
+# -----------------------------
+BASE_DIR = os.path.dirname(__file__)
+DATA_PATH = os.path.join(BASE_DIR, "dataset.csv")
+
+@st.cache_data
+def load_data():
+    return pd.read_csv(DATA_PATH)
+
+model_df = load_data()
+
+# -----------------------------
+# ENCODING
+# -----------------------------
 le_gate = LabelEncoder()
 model_df["GATE_Score"] = le_gate.fit_transform(model_df["GATE_Score"])
 
@@ -17,20 +35,31 @@ model_df["Should_Do_Masters"] = le_master.fit_transform(model_df["Should_Do_Mast
 
 if le_master.transform(['Yes'])[0] != 1:
     model_df["Should_Do_Masters"] = 1 - model_df["Should_Do_Masters"]
-    le_master = LabelEncoder()
     le_master.fit(["No", "Yes"])
 
 gate_label_map = dict(zip(le_gate.transform(le_gate.classes_), le_gate.classes_))
 master_label_map = {0: "No", 1: "Yes"}
 
+# -----------------------------
+# MODEL TRAINING (CACHED)
+# -----------------------------
 X = model_df[["GATE_Score", "Salary"]]
 y = model_df["Should_Do_Masters"]
 
-x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
-model = RandomForestClassifier(n_estimators=500, random_state=42)
-model.fit(x_train, y_train)
+@st.cache_resource
+def train_model(X, y):
+    x_train, x_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    model.fit(x_train, y_train)
+    return model
 
+model = train_model(X, y)
+
+# -----------------------------
 # UI
+# -----------------------------
 st.title("🎓 Masters Decision Support System")
 
 with st.sidebar:
@@ -38,10 +67,12 @@ with st.sidebar:
         menu_title="Main Menu",
         options=["Home", "About Model", "Dataset", "Prediction Model", "Graph"],
         icons=["house", "info-circle", "table", "cpu", "bar-chart"],
-        orientation="vertical"
+        default_index=0
     )
 
-# Pages
+# -----------------------------
+# PAGES
+# -----------------------------
 if selected == "Home":
     st.subheader("👋 Welcome!")
     st.write("Use the sidebar to explore the application.")
@@ -56,56 +87,58 @@ elif selected == "About Model":
 
     ### 🧠 Model
     - Random Forest Classifier
-    - Trained on balanced_master_decision.csv
-
-
+    - Supervised Machine Learning
     """)
 
 elif selected == "Dataset":
-    st.title("📁 Uploaded Dataset (master_decison.csv)")
-    try:
-        dataset_df = pd.read_csv("dataset.csv")
-        st.dataframe(dataset_df)
-    except FileNotFoundError:
-        st.error("data.csv file not found. Please upload or check path.")
+    st.title("📁 Dataset Preview")
+    st.dataframe(model_df)
 
 elif selected == "Prediction Model":
     st.title("🤖 Predict: Should You Do a Master's?")
+
     gate_input = st.selectbox("Select GATE Score", le_gate.classes_)
-    salary_input = st.number_input("Enter current salary (INR)", value=500000)
+    salary_input = st.number_input(
+        "Enter current salary (INR)", min_value=0, value=500000, step=50000
+    )
 
     if st.button("Predict"):
         gate_encoded = le_gate.transform([gate_input])[0]
         prediction = model.predict([[gate_encoded, salary_input]])
         result = le_master.inverse_transform(prediction)[0]
-        st.success(f"Prediction: You should {'🧑‍🎓 do' if result == 'Yes' else '🚫 not do'} a Master's.")
+
+        st.success(
+            f"Prediction: You should {'🧑‍🎓 do' if result == 'Yes' else '🚫 not do'} a Master's."
+        )
 
 elif selected == "Graph":
-    st.title("📊 Visualize Data from master_decison.csv")
-    feature = st.selectbox("Choose a feature", ["GATE_Score", "Salary", "Should_Do_Masters"])
+    st.title("📊 Data Visualization")
+
+    feature = st.selectbox(
+        "Choose a feature",
+        ["GATE_Score", "Salary", "Should_Do_Masters"]
+    )
+
+    plt.clf()
 
     if feature == "GATE_Score":
-        st.subheader("GATE Score Distribution")
         counts = model_df[feature].value_counts().sort_index()
         labels = [gate_label_map[i] for i in counts.index]
-        plt.figure()
-        plt.bar(labels, counts.values, color="purple")
+
+        plt.bar(labels, counts.values)
         plt.xlabel("GATE Score")
         plt.ylabel("Count")
         st.pyplot(plt.gcf())
 
     elif feature == "Salary":
-        st.subheader("Salary Histogram")
-        plt.figure()
-        plt.hist(model_df[feature], bins=15, color="orange", edgecolor="black")
+        plt.hist(model_df[feature], bins=15)
         plt.xlabel("Salary")
         plt.ylabel("Frequency")
         st.pyplot(plt.gcf())
 
     elif feature == "Should_Do_Masters":
-        st.subheader("Master's Decision Distribution")
         counts = model_df[feature].value_counts().sort_index()
         labels = [master_label_map[i] for i in counts.index]
-        plt.figure()
-        plt.pie(counts, labels=labels, autopct='%1.1f%%', colors=["#ff9999", "#66b3ff"])
+
+        plt.pie(counts, labels=labels, autopct="%1.1f%%")
         st.pyplot(plt.gcf())
