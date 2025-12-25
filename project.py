@@ -187,4 +187,5 @@ elif selected == "Graph":
 # FOOTER
 # -----------------------------
 st.markdown("---")
-st.caption("Developed by Yash | Data-Driven Career Decision System")
+st.caption("Developed by Yash Chhatbar | Data-Driven Career Decision System")
+
